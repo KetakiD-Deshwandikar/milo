@@ -88,8 +88,34 @@ function toUIFormat(result, signalResult) {
   };
   return icon;
 }
+//helper functions for SEO checks
+function getElementPosition(element) {
+  if (element.closest('header nav')) return 'NAV';
+  if (element.closest('footer')) return 'FOOTER';
+  if (element.closest('main')) return 'CONTENT';
+  return 'OTHER';
+}
 
-export async function sendResults() {
+function getTagType(element) {
+  if (element.tagName === 'A') return 'Anchor';
+  if (element.tagName === 'IMG') return 'Image';
+  if (element.tagName === 'IFRAME') return 'IFrame';
+  return element.tagName;
+}
+
+function isElementVisible(element) {
+  const style = window.getComputedStyle(element);
+  return style.display !== 'none' && 
+         style.visibility !== 'hidden' && 
+         style.opacity !== '0';
+}
+
+function extractLocaleFromUrl(url) {
+  const match = url.match(/\/([a-z]{2}_[a-z]{2})\//i);
+  return match ? match[1] : 'en_us';
+}
+//original function 
+/*export async function sendResults() {
   const robots = document.querySelector('meta[name="robots"]').content || 'all';
 
   const data = {
@@ -117,8 +143,58 @@ export async function sendResults() {
       body: JSON.stringify({ data }),
     },
   );
-}
+}*/
+export async function sendResults() {
+  const robots = document.querySelector('meta[name="robots"]').content || 'all';
+  const sourceUrl = window.location.href;
+  const locale = extractLocaleFromUrl(sourceUrl);
+  
+  // Enhance badLinks with additional metadata
+  const enhancedBadLinks = linksResult.value.details.badLinks.map((link) => {
+    // Find the actual element if possible
+    const element = document.querySelector(`a[href*="${link.liveHref}"]`);
+    
+    return {
+      ...link,
+      sourceUrl,
+      locale,
+      brokenLink: link.liveHref,
+      tagType: element ? getTagType(element) : 'Unknown',
+      position: element ? getElementPosition(element) : link.parent,
+      linkTextOrImgAlt: element ? (element.textContent?.trim() || element.alt || element.title || '') : '',
+      visibility: element ? isElementVisible(element) : 'Unknown',
+    };
+  });
 
+  const data = {
+    dateTime: new Date().toLocaleString(),
+    url: window.location.href,
+    sourceUrl,
+    locale,
+    H1: h1Result.value.description,
+    httpsLinks: linksResult.value.description,
+    title: titleResult.value.description,
+    canon: canonResult.value.description,
+    metaDescription: descResult.value.description,
+    loremIpsum: loremResult.value.description,
+    bodyLength: bodyResult.value.description,
+    https: window.location.protocol === 'https:' ? 'HTTPS' : 'HTTP',
+    robots,
+    badLinks: enhancedBadLinks, // Add enhanced links data
+  };
+
+  await fetch(
+    'https://main--milo--adobecom.aem.page/seo/preflight',
+    {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      redirect: 'follow',
+      referrerPolicy: 'no-referrer',
+      body: JSON.stringify({ data }),
+    },
+  );
+}
 function SeoItem({ id, icon, title, description, supportsAi }) {
   const aiSuggestion = aiSuggestions.value.find((suggestion) => suggestion.id === id)?.aiSuggestion;
   const showLoadingAi = isAso && supportsAi && icon === 'red' && !aiSuggestion;
